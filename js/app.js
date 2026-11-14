@@ -12,7 +12,9 @@
     // トーン
     exposure: 0, contrast: 0, highlights: 0, shadows: 0, fade: 0, sharp: 0,
     // 紙と質感
-    paperColor: '#f4f1ea', paperTex: 0.3, mottle: 0.15, grain: 0.1, matte: 0.2,
+    paperColor: '#f4f1ea', paperTex: 0.3, mottle: 0.15, grain: 0.1, matte: 0.2, seed: 0,
+    // スキャン
+    scan: 'off', scanDpi: '300', scanBlur: 0.6,
   };
 
   const PAPERS = [
@@ -39,6 +41,9 @@
       p: { method: 'offset', freq: 220, dotGain: 0.24, misreg: 0.55, spread: 0.4, inkSet: 'vintage', accuracy: 0.55, exposure: 0.4,
         densC: 0.8, densK: 0.85, sat: -0.05, fade: 0.35, temp: 0.2, paperColor: '#e3d2a8', paperTex: 0.7,
         mottle: 0.45, grain: 0.3, matte: 0.7, sharp: -0.1 } },
+    { id: 'scan', label: '雑誌スキャン', note: '175線の誌面を A4・300dpi でスキャン',
+      p: { method: 'offset', freq: 1450, dotGain: 0.12, misreg: 0.15, spread: 0.2, scan: 'on', scanDpi: '300',
+        scanBlur: 0.6, fade: 0.08, paperColor: '#f2eee4', paperTex: 0.35, mottle: 0.2, grain: 0.08, matte: 0.35 } },
     { id: 'news', label: '新聞', note: '新聞紙・粗い網点・浅い黒',
       p: { method: 'offset', freq: 170, dotGain: 0.28, misreg: 0.4, spread: 0.45, sat: -0.3, contrast: -0.05, exposure: 0.3,
         inkDensity: 0.62, paperColor: '#d5cfc0', paperTex: 0.8, mottle: 0.5, grain: 0.25, matte: 0.9 } },
@@ -60,7 +65,8 @@
       { key: 'method', type: 'choice', options: [
         ['offset', 'オフセット'], ['gravure', 'グラビア'], ['fm', 'FMスクリーン'],
         ['letterpress', '活版'], ['riso', 'リソグラフ'], ['none', '連続階調'] ] },
-      { key: 'freq', label: '線数（画像幅あたりの網点数）', min: 40, max: 2000, scale: 'log', show: (p) => p.method !== 'none' },
+      { key: 'freq', label: '線数（画像幅あたり）', min: 40, max: 2400, scale: 'log',
+        format: (v) => `${v}（A4換算 ${Math.round(v / renderer.pageWidthInch())}線）`, show: (p) => p.method !== 'none' },
       { key: 'dotShape', label: '網点形状', type: 'choice', options: [['round', '丸'], ['ellipse', 'チェーン'], ['line', 'ライン']],
         show: (p) => AM.includes(p.method) },
       { key: 'angle', label: 'スクリーン角度', min: -45, max: 45, step: 1, unit: '°', show: (p) => AM.includes(p.method) || p.method === 'gravure' },
@@ -98,6 +104,13 @@
       { key: 'mottle', label: 'インキむら', min: 0, max: 1, step: 0.01 },
       { key: 'grain', label: '粒状感', min: 0, max: 1, step: 0.01 },
       { key: 'matte', label: '黒の浮き（マット感）', min: 0, max: 1, step: 0.01 },
+      { type: 'button', label: 'むら・紙目を乱数で作り直す', action: () => reseed() },
+    ] },
+    { title: 'スキャン', items: [
+      { key: 'scan', type: 'choice', options: [['off', 'オフ'], ['on', 'オン']] },
+      { key: 'scanDpi', label: '解像度（画像幅を A4 幅に合わせる）', type: 'choice',
+        options: [['150', '150dpi'], ['300', '300dpi'], ['600', '600dpi']], show: (p) => p.scan === 'on' },
+      { key: 'scanBlur', label: 'ぼかし（ガウス半径）', min: 0.35, max: 2.5, step: 0.05, unit: ' px', show: (p) => p.scan === 'on' },
     ] },
   ];
 
@@ -257,6 +270,8 @@
     renderer.setImage(source, w, h);
     fileName = (name || 'image').replace(/\.[^.]+$/, '');
     $('#hint').hidden = true;
+    params.seed = Math.floor(Math.random() * 1e6);   // むらの出方は画像ごとに変える
+    refreshUI();
     fit();
   }
   async function loadFile(file) {
@@ -314,6 +329,9 @@
   function refreshUI() {
     for (const u of updaters) u();
     for (const b of document.querySelectorAll('#presets button')) b.classList.toggle('active', b.dataset.id === presetId);
+    const sc = $('#export-scale');
+    sc.disabled = params.scan === 'on';
+    sc.title = sc.disabled ? 'スキャン時はスキャン解像度のまま書き出します' : '';
   }
   function setParam(key, value) {
     params[key] = value;
@@ -322,8 +340,13 @@
     save();
     requestRender();
   }
+  function reseed() {
+    params.seed = Math.floor(Math.random() * 1e6);
+    save();
+    requestRender();
+  }
   function applyPreset(p) {
-    params = { ...DEFAULTS, ...p.p };
+    params = { ...DEFAULTS, ...p.p, seed: params.seed };
     presetId = p.id;
     refreshUI();
     save();
@@ -358,7 +381,7 @@
       const iv = String(log ? Math.log2(v) : v);
       if (document.activeElement !== input || parseFloat(input.value) !== parseFloat(iv)) input.value = iv;
       const digits = log || (item.step || 1) >= 1 ? 0 : 2;
-      val.textContent = (item.min < 0 && v > 0 ? '+' : '') + v.toFixed(digits) + (item.unit || '');
+      val.textContent = item.format ? item.format(v) : (item.min < 0 && v > 0 ? '+' : '') + v.toFixed(digits) + (item.unit || '');
       val.classList.toggle('changed', v !== DEFAULTS[item.key]);
       row.hidden = item.show ? !item.show(params) : false;
     });
@@ -425,6 +448,15 @@
     d.open = true;
     d.append(el('summary', null, sec.title));
     for (const item of sec.items) {
+      if (item.type === 'button') {
+        const row = el('div', 'row');
+        const b = el('button', null, item.label);
+        b.type = 'button';
+        b.addEventListener('click', item.action);
+        row.append(b);
+        d.append(row);
+        continue;
+      }
       d.append(item.type === 'choice' ? buildChoice(item) : item.type === 'color' || item.type === 'paper' ? buildColor(item) : buildSlider(item));
     }
     controls.append(d);

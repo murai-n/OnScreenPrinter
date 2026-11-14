@@ -125,6 +125,9 @@ uniform vec4 u_dens;
 uniform vec3 u_paper;
 uniform float u_paperTex, u_mottle, u_grain, u_matte;
 uniform vec3 u_bg;
+uniform int u_scan;           // 1: スキャナの画素格子へ描画中
+uniform float u_scanBlur;     // スキャナ光学系のぼけ (σ, スキャン画素)
+uniform vec2 u_seed;          // むら・紙目・粒状の乱数オフセット
 ${COMMON}
 const float TAU = 6.2831853;
 
@@ -151,6 +154,7 @@ float chan(vec4 v, int i) { return i == 0 ? v.r : (i == 1 ? v.g : (i == 2 ? v.b 
 // 版 i の網点面積率を読む (ぼかし / シャープを含む)
 float readCh(int i, vec2 uv) {
   float lod0 = max(0.0, log2(u_img.x / u_ppw));
+  if (u_scan == 1) lod0 = max(lod0, log2(max(1.0, 2.5 * u_scanBlur * u_img.x / u_ppw)));
   float soft = max(0.0, -u_sharp);
   float lod = max(lod0, log2(1.0 + soft * u_img.x / 250.0));
   float e = chan(textureLod(u_cmyk, uv, lod), i);
@@ -236,30 +240,13 @@ float screenGravure(int i, vec2 q, float v, float ppc) {
   return mix(v, a, smoothstep(1.3, 3.0, ppc));
 }
 
-void main() {
-  if (v_uv.x < 0.0 || v_uv.x > 1.0 || v_uv.y < 0.0 || v_uv.y > 1.0) { o = vec4(u_bg, 1.0); return; }
-  if (u_bypass == 1) { o = vec4(texture(u_src, v_uv).rgb, 1.0); return; }
-
-  float aspect = u_img.y / u_img.x;
-  vec2 q = vec2(v_uv.x, v_uv.y * aspect);
-  float ppc = u_ppw / u_freq;
-
-  // 紙
-  vec3 paper = u_paper;
-  float fib = fbm(q * vec2(170.0, 520.0));
-  float speck = vnoise(q * 1500.0);
-  paper *= 1.0 - u_paperTex * (0.16 * (fib - 0.5) + 0.07 * (speck - 0.5));
-
-  // インキむら
-  float mott = 1.0 + u_mottle * ((fbm(q * 7.0) - 0.5) * 1.2 + (fbm(q * 90.0) - 0.5) * 0.7);
-  if (u_method == 5) mott *= 1.0 + 0.3 * (fbm(vec2(q.x * 3.0, q.y * 45.0)) - 0.5);
-
-  vec3 res = paper;
+// 4版ぶんのインキ層の透過率。val は各版の網点面積率、ppc は網点1個あたりの標本数
+vec3 inkLayer(vec2 uv, float aspect, vec4 val, float ppc, float mott) {
+  vec3 r = vec3(1.0);
   for (int i = 0; i < 4; i++) {
-    vec2 uv = v_uv + u_misreg[i];
-    vec2 qi = q + u_misreg[i] * vec2(1.0, aspect);
-    float v = readCh(i, uv);
-    v = clamp(v + u_dotGain * 4.0 * v * (1.0 - v), 0.0, 1.0);
+    vec2 uvi = uv + u_misreg[i];
+    vec2 qi = vec2(uvi.x, uvi.y * aspect);
+    float v = val[i];
     float dm = 1.0;
     float cov = v;
     if (u_method == 1) cov = screenAM(i, qi, v, ppc, false, dm);
@@ -268,17 +255,82 @@ void main() {
     else if (u_method == 4) cov = screenAM(i, qi, v, ppc, true, dm);
     else if (u_method == 5) cov = screenFM(i, qi, v, ppc, 0.25);
     vec3 T = pow(u_ink[i], vec3(max(0.0, u_dens[i] * mott * dm)));
-    res *= mix(vec3(1.0), T, cov);
+    r *= mix(vec3(1.0), T, cov);
   }
+  return r;
+}
+
+void main() {
+  if (v_uv.x < 0.0 || v_uv.x > 1.0 || v_uv.y < 0.0 || v_uv.y > 1.0) { o = vec4(u_bg, 1.0); return; }
+  if (u_bypass == 1) { o = vec4(texture(u_src, v_uv).rgb, 1.0); return; }
+
+  float aspect = u_img.y / u_img.x;
+  vec2 q = vec2(v_uv.x, v_uv.y * aspect);
+  vec2 qs = q + u_seed;
+  float ppc = u_ppw / u_freq;
+
+  // 紙
+  vec3 paper = u_paper;
+  float fib = fbm(qs * vec2(170.0, 520.0));
+  float speck = vnoise(qs * 1500.0);
+  paper *= 1.0 - u_paperTex * (0.16 * (fib - 0.5) + 0.07 * (speck - 0.5));
+
+  // インキむら
+  float mott = 1.0 + u_mottle * ((fbm(qs * 7.0) - 0.5) * 1.2 + (fbm(qs * 90.0) - 0.5) * 0.7);
+  if (u_method == 5) mott *= 1.0 + 0.3 * (fbm(vec2(qs.x * 3.0, qs.y * 45.0)) - 0.5);
+
+  vec4 val;
+  for (int i = 0; i < 4; i++) {
+    float v = readCh(i, v_uv + u_misreg[i]);
+    val[i] = clamp(v + u_dotGain * 4.0 * v * (1.0 - v), 0.0, 1.0);
+  }
+
+  vec3 ink;
+  if (u_scan == 1) {
+    // スキャン: 画素ごとに、網点をガウス窓で積分する (網点と画素格子の干渉もここで生じる)
+    const int N = 4;
+    float sigma = max(u_scanBlur, 0.35);
+    float R = max(0.5, 2.0 * sigma);
+    float tapPpc = ppc * float(N) / (2.0 * R);
+    vec3 acc = vec3(0.0);
+    float wsum = 0.0;
+    for (int y = 0; y < N; y++) {
+      for (int x = 0; x < N; x++) {
+        vec2 d = ((vec2(float(x), float(y)) + 0.5) / float(N) * 2.0 - 1.0) * R;
+        float w = exp(-dot(d, d) / (2.0 * sigma * sigma));
+        acc += w * inkLayer(v_uv + d / vec2(u_ppw, u_ppw * aspect), aspect, val, tapPpc, mott);
+        wsum += w;
+      }
+    }
+    ink = acc / wsum;
+  } else {
+    ink = inkLayer(v_uv, aspect, val, ppc, mott);
+  }
+  vec3 res = paper * ink;
 
   // 表面反射による黒浮き (マット感)
   res = res * (1.0 - 0.06 * u_matte) + 0.06 * u_matte * u_paper;
 
   vec3 s = l2s(clamp(res, 0.0, 1.0));
-  float gn = vnoise(q * 1100.0 + 31.7) + vnoise(q * 2300.0 + 5.3) - 1.0;
+  float gn = vnoise(qs * 1100.0 + 31.7) + vnoise(qs * 2300.0 + 5.3) - 1.0;
   s += gn * u_grain * 0.14;
   o = vec4(clamp(s, 0.0, 1.0), 1.0);
 }`;
+
+  // スキャン結果 (または任意のテクスチャ) を表示するだけのパス
+  const FS_SHOW = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 o;
+uniform sampler2D u_tex;
+uniform vec3 u_bg;
+void main() {
+  if (v_uv.x < 0.0 || v_uv.x > 1.0 || v_uv.y < 0.0 || v_uv.y > 1.0) { o = vec4(u_bg, 1.0); return; }
+  o = vec4(texture(u_tex, v_uv).rgb, 1.0);
+}`;
+
+  const BG = [0.941, 0.941, 0.941];
+  const A4_SHORT_INCH = 8.268, A4_LONG_INCH = 11.693;
 
   const METHOD_ID = { none: 0, offset: 1, fm: 2, gravure: 3, letterpress: 4, riso: 5 };
   const SHAPE_ID = { round: 0, ellipse: 1, line: 2 };
@@ -364,6 +416,7 @@ void main() {
 
       this.progSep = this._program(VS, FS_SEP);
       this.progPrint = this._program(VS, FS_PRINT);
+      this.progShow = this._program(VS, FS_SHOW);
 
       this.vao = gl.createVertexArray();
       gl.bindVertexArray(this.vao);
@@ -382,6 +435,10 @@ void main() {
       this.imgW = 0;
       this.imgH = 0;
       this.sepKey = null;
+      this.scanTex = null;
+      this.scanW = 0;
+      this.scanH = 0;
+      this.scanKey = null;
     }
 
     _program(vsSrc, fsSrc) {
@@ -450,6 +507,7 @@ void main() {
       this.imgW = w;
       this.imgH = h;
       this.sepKey = null;
+      this.scanKey = null;
     }
 
     _inks(P) {
@@ -492,30 +550,36 @@ void main() {
       gl.generateMipmap(gl.TEXTURE_2D);
     }
 
+    /** 画像の幅を A4 の幅に合わせたときの幅 (インチ)。横長の画像は A4 横置きとみなす */
+    pageWidthInch() {
+      return this.imgH >= this.imgW ? A4_SHORT_INCH : A4_LONG_INCH;
+    }
+
+    /** スキャン画像の画素数 */
+    scanSize(P) {
+      const w = parseInt(P.scanDpi, 10) * this.pageWidthInch();
+      const h = (w * this.imgH) / this.imgW;
+      const k = Math.min(1, this.maxExport / Math.max(w, h));
+      return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+    }
+
     /**
-     * @param P    パラメータ
-     * @param view {scale: 画像1pxあたりのキャンバスpx, tx, ty: 画像左上のキャンバス座標}
-     * @param opts {bypass: 元画像を表示}
+     * 印刷パス。target = {fbo, w, h, originX, originY, extentW, extentH, flip, bypass, scan}
      */
-    render(P, view, opts) {
+    _print(P, inks, t) {
       const gl = this.gl;
-      if (!this.srcTex) return;
       const method = METHOD_ID[P.method] || 0;
       if ((method === 2 || method === 5) && !this.blueTex) {
         this.blueTex = this._dataTexture(BLUE_N, BLUE_N, buildBlueNoise(BLUE_N), gl.NEAREST, gl.REPEAT);
       }
-      const inks = this._inks(P);
-      this._separate(P, inks);
-
       const pr = this.progPrint;
-      const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
       gl.useProgram(pr.p);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, cw, ch);
-      gl.uniform2f(pr.loc('u_canvas'), cw, ch);
-      gl.uniform2f(pr.loc('u_origin'), view.tx, view.ty);
-      gl.uniform2f(pr.loc('u_extent'), this.imgW * view.scale, this.imgH * view.scale);
-      gl.uniform1f(pr.loc('u_flip'), -1);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+      gl.viewport(0, 0, t.w, t.h);
+      gl.uniform2f(pr.loc('u_canvas'), t.w, t.h);
+      gl.uniform2f(pr.loc('u_origin'), t.originX, t.originY);
+      gl.uniform2f(pr.loc('u_extent'), t.extentW, t.extentH);
+      gl.uniform1f(pr.loc('u_flip'), t.flip);
 
       const bind = (unit, tex, name) => {
         gl.activeTexture(gl.TEXTURE0 + unit);
@@ -528,10 +592,14 @@ void main() {
       bind(3, this.blueTex || this.lutTex, 'u_blue');
 
       gl.uniform2f(pr.loc('u_img'), this.imgW, this.imgH);
-      gl.uniform1f(pr.loc('u_ppw'), this.imgW * view.scale);
+      gl.uniform1f(pr.loc('u_ppw'), t.extentW);
       gl.uniform1i(pr.loc('u_method'), method);
       gl.uniform1i(pr.loc('u_shape'), SHAPE_ID[P.dotShape] || 0);
-      gl.uniform1i(pr.loc('u_bypass'), opts && opts.bypass ? 1 : 0);
+      gl.uniform1i(pr.loc('u_bypass'), t.bypass ? 1 : 0);
+      gl.uniform1i(pr.loc('u_scan'), t.scan ? 1 : 0);
+      gl.uniform1f(pr.loc('u_scanBlur'), P.scanBlur);
+      const frac = (x) => x - Math.floor(x);
+      gl.uniform2f(pr.loc('u_seed'), 2 * frac(Math.sin(P.seed * 12.9898) * 43758.5453), 2 * frac(Math.sin(P.seed * 78.233) * 43758.5453));
       gl.uniform1f(pr.loc('u_freq'), P.freq);
       gl.uniform1f(pr.loc('u_angle'), P.angle);
       gl.uniform1f(pr.loc('u_dotGain'), P.dotGain);
@@ -552,19 +620,87 @@ void main() {
       gl.uniform1f(pr.loc('u_mottle'), P.mottle);
       gl.uniform1f(pr.loc('u_grain'), P.grain);
       gl.uniform1f(pr.loc('u_matte'), P.matte);
-      gl.uniform3f(pr.loc('u_bg'), 0.941, 0.941, 0.941);
+      gl.uniform3fv(pr.loc('u_bg'), new Float32Array(BG));
 
       gl.bindVertexArray(this.vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    /** 画像全体を k 倍の解像度で描画して PNG Blob を返す */
+    /** 印刷結果をスキャナの画素格子に描画する (パラメータが変わったときだけ) */
+    _scan(P, inks) {
+      const gl = this.gl;
+      const { w, h } = this.scanSize(P);
+      const key = JSON.stringify([P, inks, w, h]);
+      if (key === this.scanKey) return;
+      this.scanKey = key;
+      if (!this.scanTex || w !== this.scanW || h !== this.scanH) {
+        if (this.scanTex) gl.deleteTexture(this.scanTex);
+        this.scanTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.scanTex);
+        gl.texStorage2D(gl.TEXTURE_2D, Math.floor(Math.log2(Math.max(w, h))) + 1, gl.RGBA8, w, h);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.scanW = w;
+        this.scanH = h;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.scanTex, 0);
+      this._print(P, inks, { fbo: this.fbo, w, h, originX: 0, originY: 0, extentW: w, extentH: h, flip: 1, bypass: false, scan: true });
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, this.scanTex);
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
+
+    /**
+     * @param P    パラメータ
+     * @param view {scale: 画像1pxあたりのキャンバスpx, tx, ty: 画像左上のキャンバス座標}
+     * @param opts {bypass: 元画像を表示}
+     */
+    render(P, view, opts) {
+      const gl = this.gl;
+      if (!this.srcTex) return;
+      const inks = this._inks(P);
+      this._separate(P, inks);
+      const bypass = !!(opts && opts.bypass);
+      const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+      const extentW = this.imgW * view.scale, extentH = this.imgH * view.scale;
+
+      if (P.scan === 'on' && !bypass) {
+        this._scan(P, inks);
+        const pr = this.progShow;
+        gl.useProgram(pr.p);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, cw, ch);
+        gl.uniform2f(pr.loc('u_canvas'), cw, ch);
+        gl.uniform2f(pr.loc('u_origin'), view.tx, view.ty);
+        gl.uniform2f(pr.loc('u_extent'), extentW, extentH);
+        gl.uniform1f(pr.loc('u_flip'), -1);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.scanTex);
+        gl.uniform1i(pr.loc('u_tex'), 0);
+        gl.uniform3fv(pr.loc('u_bg'), new Float32Array(BG));
+        gl.bindVertexArray(this.vao);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        return;
+      }
+      this._print(P, inks, { fbo: null, w: cw, h: ch, originX: view.tx, originY: view.ty, extentW, extentH, flip: -1, bypass, scan: false });
+    }
+
+    /** 画像全体を PNG Blob にする。スキャン時はスキャン画素数そのまま、それ以外は作業解像度の k 倍 */
     exportBlob(P, k) {
       const canvas = this.canvas;
       const prevW = canvas.width, prevH = canvas.height;
-      k = Math.min(k, this.maxExport / Math.max(this.imgW, this.imgH));
-      canvas.width = Math.round(this.imgW * k);
-      canvas.height = Math.round(this.imgH * k);
+      if (P.scan === 'on') {
+        const sz = this.scanSize(P);
+        canvas.width = sz.w;
+        canvas.height = sz.h;
+      } else {
+        k = Math.min(k, this.maxExport / Math.max(this.imgW, this.imgH));
+        canvas.width = Math.round(this.imgW * k);
+        canvas.height = Math.round(this.imgH * k);
+      }
       this.render(P, { scale: canvas.width / this.imgW, tx: 0, ty: 0 }, null);
       const size = { w: canvas.width, h: canvas.height };
       return new Promise((resolve, reject) => {

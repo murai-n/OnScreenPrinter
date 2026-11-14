@@ -267,61 +267,316 @@
   window.addEventListener('keyup', (e) => { if (e.code === 'Space') setBypass(false); });
 
   // ---------------------------------------------------------------- image IO
-  function setImage(source, w, h, name) {
+  const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif|tiff?)$/i;
+  const isImage = (f) => (f.type ? f.type.startsWith('image/') : false) || IMAGE_EXT.test(f.name);
+  const baseName = (name) => (name || 'image').replace(/^.*\//, '').replace(/\.[^.]+$/, '');
+  const dirName = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '');
+  const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
+
+  /** 読み込んだ画像の一覧。{file, path, seed, el, error} */
+  const items = [];
+  let current = -1;      // 表示中の項目。-1 はサンプル
+  let loadToken = 0;
+  let busy = false;      // 一括書き出し中
+
+  function setImage(source, w, h, name, seed) {
     renderer.setImage(source, w, h);
-    fileName = (name || 'image').replace(/\.[^.]+$/, '');
-    $('#hint').hidden = true;
-    params.seed = Math.floor(Math.random() * 1e6);   // むらの出方は画像ごとに変える
+    fileName = baseName(name);
+    params.seed = seed;   // むらの出方は画像ごとに変える
     refreshUI();
     fit();
   }
-  async function loadFile(file) {
-    if (!file || !file.type.startsWith('image/')) return;
+
+  async function decode(file) {
+    return createImageBitmap(file, { imageOrientation: 'from-image' });
+  }
+
+  /** i 番目を表示する。読み込めたら true */
+  async function select(i) {
+    if (busy || i < 0 || i >= items.length) return false;
+    const token = ++loadToken;
+    current = i;
+    updateStrip();
+    const it = items[i];
     try {
-      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-      setImage(bmp, bmp.width, bmp.height, file.name);
+      const bmp = await decode(it.file);
+      if (token !== loadToken) { bmp.close(); return false; }
+      setImage(bmp, bmp.width, bmp.height, it.path, it.seed);
       bmp.close();
+      $('#hint').hidden = true;
+      it.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      return true;
     } catch (err) {
-      alert('画像を読み込めませんでした: ' + err.message);
+      if (token !== loadToken) return false;
+      it.error = true;
+      updateStrip();
+      setStatus(`「${it.path}」を読み込めませんでした（このブラウザが対応していない形式の可能性があります）`);
+      return false;
     }
   }
+
+  /** i 番目から順に、読み込める画像が見つかるまで表示を試す */
+  async function selectFrom(i) {
+    for (let j = i; j < items.length; j++) {
+      if (await select(j)) return;
+      if (busy) return;
+    }
+  }
+
+  /** @param entries {file, path}[] */
+  function addFiles(entries) {
+    const list = entries.filter((e) => e.file && isImage(e.file));
+    const skipped = entries.length - list.length;
+    if (!list.length) {
+      if (skipped) setStatus('画像ファイルが見つかりませんでした');
+      return;
+    }
+    list.sort((a, b) => collator.compare(a.path, b.path));
+    const first = items.length;
+    for (const e of list) {
+      const it = { file: e.file, path: e.path || e.file.name, seed: Math.floor(Math.random() * 1e6), error: false };
+      it.el = makeThumb(it);
+      items.push(it);
+    }
+    updateStrip();
+    setStatus(skipped ? `画像以外のファイル ${skipped} 件は読み込みませんでした` : '');
+    selectFrom(first);
+    makeThumbnails(items.slice(first));
+  }
+
+  // ---------- サムネイルの帯
+  const strip = $('#strip');
+  const thumbs = $('#thumbs');
+  const setStatus = (t) => { $('#strip-status').textContent = t; };
+
+  function makeThumb(it) {
+    const b = el('button', 'thumb');
+    b.type = 'button';
+    b.setAttribute('role', 'option');
+    b.title = it.path;
+    b.addEventListener('click', () => select(items.indexOf(it)));
+    const rm = el('span', 'remove', '×');
+    rm.setAttribute('role', 'button');
+    rm.setAttribute('aria-label', '一覧から外す');
+    rm.addEventListener('click', (e) => { e.stopPropagation(); removeItem(items.indexOf(it)); });
+    b.append(rm);
+    thumbs.append(b);
+    return b;
+  }
+
+  async function makeThumbnails(list) {
+    for (const it of list) {
+      if (!items.includes(it)) continue;
+      try {
+        const bmp = await createImageBitmap(it.file, { imageOrientation: 'from-image' });
+        const h = 144, w = Math.max(48, Math.round((bmp.width / bmp.height) * h));
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingQuality = 'medium';
+        ctx.drawImage(bmp, 0, 0, w, h);
+        bmp.close();
+        it.el.prepend(c);
+      } catch (err) {
+        it.error = true;
+        it.el.classList.add('error');
+        it.el.prepend(document.createTextNode('読込不可'));
+      }
+    }
+  }
+
+  function updateStrip() {
+    strip.hidden = items.length === 0;
+    $('#strip-count').textContent = `${items.length} 枚`;
+    items.forEach((it, i) => {
+      it.el.classList.toggle('active', i === current);
+      it.el.setAttribute('aria-selected', i === current ? 'true' : 'false');
+      it.el.classList.toggle('error', it.error);
+    });
+    $('#btn-export-all').disabled = busy || items.length === 0;
+    $('#btn-clear').disabled = busy;
+  }
+
+  function removeItem(i) {
+    if (busy || i < 0) return;
+    const [it] = items.splice(i, 1);
+    it.el.remove();
+    if (!items.length) { current = -1; updateStrip(); setStatus(''); loadSample(); return; }
+    if (i === current) select(Math.min(i, items.length - 1));
+    else { if (i < current) current--; updateStrip(); }
+  }
+
+  $('#btn-clear').addEventListener('click', () => {
+    if (busy) return;
+    for (const it of items) it.el.remove();
+    items.length = 0;
+    current = -1;
+    updateStrip();
+    setStatus('');
+    loadSample();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    const onThumb = e.target.classList && e.target.classList.contains('thumb');
+    if ((typing(e) && !onThumb) || items.length < 2 || current < 0) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); select(Math.min(items.length - 1, current + 1)); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); select(Math.max(0, current - 1)); }
+  });
+
+  // ---------- 取り込み
   $('#btn-open').addEventListener('click', () => $('#file').click());
-  $('#file').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
-  $('#btn-sample').addEventListener('click', loadSample);
+  $('#btn-folder').addEventListener('click', () => $('#folder').click());
+  $('#file').addEventListener('change', (e) => {
+    addFiles([...e.target.files].map((file) => ({ file, path: file.name })));
+    e.target.value = '';
+  });
+  $('#folder').addEventListener('change', (e) => {
+    addFiles([...e.target.files].map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+    e.target.value = '';
+  });
+  $('#btn-sample').addEventListener('click', () => { if (!busy) loadSample(); });
+
+  // フォルダのドロップ: ディレクトリを再帰的にたどる
+  function readEntry(entry, path) {
+    return new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file((file) => resolve([{ file, path: path + file.name }]), () => resolve([]));
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const all = [];
+        const next = () => reader.readEntries(async (batch) => {
+          if (!batch.length) {
+            const nested = await Promise.all(all.map((en) => readEntry(en, path + entry.name + '/')));
+            resolve(nested.flat());
+          } else {
+            all.push(...batch);
+            next();
+          }
+        }, () => resolve([]));
+        next();
+      } else {
+        resolve([]);
+      }
+    });
+  }
+
   window.addEventListener('dragover', (e) => { e.preventDefault(); stage.classList.add('drop'); });
   window.addEventListener('dragleave', () => stage.classList.remove('drop'));
-  window.addEventListener('drop', (e) => {
+  window.addEventListener('drop', async (e) => {
     e.preventDefault();
     stage.classList.remove('drop');
-    loadFile(e.dataTransfer.files[0]);
+    if (busy) return;
+    const dt = e.dataTransfer;
+    // getAsEntry は drop イベントの間にしか呼べないので、先にまとめて取り出す
+    const entries = [...(dt.items || [])].map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean);
+    if (entries.length) {
+      const nested = await Promise.all(entries.map((en) => readEntry(en, '')));
+      addFiles(nested.flat());
+    } else {
+      addFiles([...dt.files].map((file) => ({ file, path: file.name })));
+    }
   });
   window.addEventListener('paste', (e) => {
-    const item = [...(e.clipboardData ? e.clipboardData.items : [])].find((i) => i.type.startsWith('image/'));
-    if (item) loadFile(item.getAsFile());
+    if (busy) return;
+    const files = [...(e.clipboardData ? e.clipboardData.items : [])]
+      .filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter(Boolean);
+    addFiles(files.map((file, n) => ({ file, path: files.length > 1 ? `pasted_${n + 1}.png` : 'pasted.png' })));
   });
 
   function loadSample() {
+    ++loadToken;
+    current = -1;
+    updateStrip();
     const c = window.OSP.makeSample();
-    setImage(c, c.width, c.height, 'sample');
-    $('#hint').hidden = false;
+    setImage(c, c.width, c.height, 'sample', params.seed);
+    $('#hint').hidden = items.length > 0;
+  }
+
+  // ---------- 書き出し
+  const exportOpts = () => {
+    const type = $('#export-format').value;
+    return { longSide: parseInt($('#export-scale').value, 10), type, ext: type === 'image/jpeg' ? 'jpg' : 'png' };
+  };
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   }
 
   $('#btn-export').addEventListener('click', async () => {
+    if (busy) return;
     const btn = $('#btn-export');
     btn.disabled = true;
     try {
-      const type = $('#export-format').value;
-      const { blob } = await renderer.exportBlob(params, { longSide: parseInt($('#export-scale').value, 10), type });
+      const o = exportOpts();
+      const { blob } = await renderer.exportBlob(params, o);
       draw();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${fileName}_${presetId}.${type === 'image/jpeg' ? 'jpg' : 'png'}`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      download(blob, `${fileName}_${presetId}.${o.ext}`);
     } catch (err) {
       alert(err.message);
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  let cancelAll = false;
+  const exportAllBtn = $('#btn-export-all');
+  exportAllBtn.addEventListener('click', async () => {
+    if (busy) { cancelAll = true; return; }
+    if (!items.length) return;
+    busy = true;
+    cancelAll = false;
+    updateStrip();
+    exportAllBtn.disabled = false;
+    exportAllBtn.textContent = '中止';
+    const P = { ...params };          // 書き出し中に設定を動かしても、押した時点の設定で揃える
+    const tag = presetId;
+    const o = exportOpts();
+    const zip = new window.OSP.ZipWriter();
+    const used = new Set();
+    const failed = [];
+    let done = 0;
+    let summary = '';
+    try {
+      for (const it of items) {
+        if (cancelAll) break;
+        setStatus(`書き出し中 ${done + 1} / ${items.length}　${it.path}`);
+        try {
+          const bmp = await decode(it.file);
+          renderer.setImage(bmp, bmp.width, bmp.height);
+          bmp.close();
+          const { blob } = await renderer.exportBlob({ ...P, seed: it.seed }, o);
+          let name = `${dirName(it.path)}${baseName(it.path)}_${tag}`;
+          let out = `${name}.${o.ext}`;
+          for (let n = 2; used.has(out.toLowerCase()); n++) out = `${name}_${n}.${o.ext}`;
+          used.add(out.toLowerCase());
+          await zip.add(out, blob);
+          done++;
+        } catch (err) {
+          if (/zip/.test(err.message)) throw err;
+          failed.push(it.path);
+        }
+        await new Promise((r) => setTimeout(r, 0));   // 画面の更新と「中止」の受け付け
+      }
+      if (done) download(zip.finish(), `onscreenprinter_${tag}_${done}.zip`);
+      const msg = [];
+      msg.push(cancelAll ? `中止しました（${done} 枚を書き出し）` : `${done} 枚を書き出しました`);
+      if (failed.length) msg.push(`読み込めなかった画像 ${failed.length} 枚：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' ほか' : ''}`);
+      summary = msg.join('　');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      busy = false;
+      exportAllBtn.textContent = 'すべて書き出し（zip）';
+      updateStrip();
+      // 書き出し前に表示していた画像に戻す。結果の表示は戻したあとに出す (読み込みエラーで消えないように)
+      const keep = current;
+      current = -1;
+      if (keep >= 0) await select(keep); else loadSample();
+      setStatus(summary);
     }
   });
 

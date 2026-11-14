@@ -11,6 +11,7 @@
   <h1>OnScreenPrinter</h1>
   <div class="tools">
     <button id="btn-open" type="button" class="primary">画像を開く</button>
+    <button id="btn-folder" type="button">フォルダを開く</button>
     <button id="btn-sample" type="button">サンプル</button>
     <span class="sep"></span>
     <button id="btn-fit" type="button" title="全体を表示">フィット</button>
@@ -30,15 +31,28 @@
     <span class="sep"></span>
     <a class="btn" href="manual.html" target="_blank" rel="noopener">マニュアル</a>
   </div>
-  <input id="file" type="file" accept="image/*" hidden>
+  <input id="file" type="file" accept="image/*" multiple hidden>
+  <input id="folder" type="file" webkitdirectory multiple hidden>
 </header>
 <main>
-  <section id="stage">
-    <canvas id="view"></canvas>
-    <div id="hint">画像をドラッグ＆ドロップ / 貼り付け　・　ホイールで拡大、ドラッグで移動</div>
-    <div id="zoom">100%</div>
-    <div id="fatal" hidden></div>
-  </section>
+  <div id="viewer">
+    <section id="stage">
+      <canvas id="view"></canvas>
+      <div id="hint">画像・フォルダをドラッグ＆ドロップ / 貼り付け　・　ホイールで拡大、ドラッグで移動</div>
+      <div id="zoom">100%</div>
+      <div id="fatal" hidden></div>
+    </section>
+    <section id="strip" hidden aria-label="読み込んだ画像">
+      <div class="strip-bar">
+        <span id="strip-count"></span>
+        <span id="strip-status" role="status"></span>
+        <span class="grow"></span>
+        <button id="btn-clear" type="button">一覧を空にする</button>
+        <button id="btn-export-all" type="button" class="primary">すべて書き出し（zip）</button>
+      </div>
+      <div id="thumbs" role="listbox" aria-label="画像の一覧"></div>
+    </section>
+  </div>
   <aside id="panel">
     <div class="panel-head">
       <h2>プリセット</h2>
@@ -50,6 +64,7 @@
 </main>
 <script src="js/renderer.js"></script>
 <script src="js/sample.js"></script>
+<script src="js/zip.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 
   const DEFAULTS = {
     // 印刷方式
-    method: 'offset', freq: 260, dotShape: 'round', angle: 0, dotGain: 0.12, misreg: 0.1, spread: 0.15,
+    method: 'offset', freq: 600, dotShape: 'round', angle: 0, dotGain: 0.12, misreg: 0.1, spread: 0.15,
     // 色味
     colorMode: 'cmyk', inkSet: 'process', spotColor: '#a8632a',
     temp: 0, tint: 0, sat: 0, inkDensity: 1, densC: 1, densM: 1, densY: 1, densK: 1, gcr: 0.6, accuracy: 1,
@@ -26,29 +26,29 @@
 
   const PRESETS = [
     { id: 'mode', label: 'モード誌', note: 'コート紙・高精細オフセット',
-      p: { method: 'offset', freq: 420, dotGain: 0.08, misreg: 0.03, spread: 0.1, contrast: 0.18, sat: 0.08,
+      p: { method: 'offset', freq: 800, dotGain: 0.08, misreg: 0.03, spread: 0.1, contrast: 0.18, sat: 0.08,
         paperColor: '#f6f5f0', paperTex: 0.12, mottle: 0.05, grain: 0.04, matte: 0.08, sharp: 0.2, gcr: 0.7 } },
     { id: 'street', label: '90s ストリート誌', note: 'マット紙・やや粗い網点',
-      p: { method: 'offset', freq: 200, dotGain: 0.2, misreg: 0.3, spread: 0.3, contrast: 0.1, sat: -0.12, fade: 0.25, exposure: 0.15,
+      p: { method: 'offset', freq: 380, dotGain: 0.2, misreg: 0.3, spread: 0.3, contrast: 0.1, sat: -0.12, fade: 0.25, exposure: 0.15,
         temp: 0.12, paperColor: '#efe8d8', paperTex: 0.5, mottle: 0.3, grain: 0.22, matte: 0.6, inkDensity: 0.9 } },
     { id: 'gravure', label: 'グラビア誌', note: 'グラビア印刷・濃厚なシャドウ',
-      p: { method: 'gravure', freq: 300, dotGain: 0.1, misreg: 0.12, spread: 0.3, contrast: 0.12, sat: 0.15,
+      p: { method: 'gravure', freq: 520, dotGain: 0.1, misreg: 0.12, spread: 0.3, contrast: 0.12, sat: 0.15,
         shadows: -0.15, paperColor: '#f2eee4', paperTex: 0.3, mottle: 0.2, grain: 0.1, matte: 0.25, inkDensity: 1.15 } },
     { id: 'vintage', label: '70s ヴィンテージ', note: '退色したインキと日焼けした紙',
-      p: { method: 'offset', freq: 150, dotGain: 0.24, misreg: 0.55, spread: 0.4, inkSet: 'vintage', accuracy: 0.55, exposure: 0.4,
+      p: { method: 'offset', freq: 280, dotGain: 0.24, misreg: 0.55, spread: 0.4, inkSet: 'vintage', accuracy: 0.55, exposure: 0.4,
         densC: 0.8, densK: 0.85, sat: -0.05, fade: 0.35, temp: 0.2, paperColor: '#e3d2a8', paperTex: 0.7,
         mottle: 0.45, grain: 0.3, matte: 0.7, sharp: -0.1 } },
     { id: 'news', label: '新聞', note: '新聞紙・粗い網点・浅い黒',
-      p: { method: 'offset', freq: 110, dotGain: 0.28, misreg: 0.4, spread: 0.45, sat: -0.3, contrast: -0.05, exposure: 0.3,
+      p: { method: 'offset', freq: 190, dotGain: 0.28, misreg: 0.4, spread: 0.45, sat: -0.3, contrast: -0.05, exposure: 0.3,
         inkDensity: 0.62, paperColor: '#d5cfc0', paperTex: 0.8, mottle: 0.5, grain: 0.25, matte: 0.9 } },
     { id: 'letterpress', label: '活版', note: '凸版・インキの縁取り',
-      p: { method: 'letterpress', freq: 120, dotGain: 0.15, misreg: 0.3, spread: 0.2, contrast: 0.15,
+      p: { method: 'letterpress', freq: 200, dotGain: 0.15, misreg: 0.3, spread: 0.2, contrast: 0.15,
         paperColor: '#efe8d8', paperTex: 0.6, mottle: 0.4, grain: 0.15, matte: 0.5 } },
     { id: 'duotone', label: 'モノクロ写真集', note: 'ダブルトーン・FMスクリーン',
-      p: { method: 'fm', freq: 520, colorMode: 'duotone', spotColor: '#9a7b5c', dotGain: 0.1, misreg: 0.02,
+      p: { method: 'fm', freq: 900, colorMode: 'duotone', spotColor: '#9a7b5c', dotGain: 0.1, misreg: 0.02,
         spread: 0.2, contrast: 0.2, paperColor: '#f2eee4', paperTex: 0.25, mottle: 0.08, grain: 0.12, matte: 0.3 } },
     { id: 'riso', label: 'リソグラフ ZINE', note: '蛍光インキ・版ズレ・粒状感',
-      p: { method: 'riso', freq: 330, inkSet: 'riso', accuracy: 0.25, gcr: 0.85, dotGain: 0.1, misreg: 0.9,
+      p: { method: 'riso', freq: 520, inkSet: 'riso', accuracy: 0.25, gcr: 0.85, dotGain: 0.1, misreg: 0.9,
         spread: 0.35, contrast: 0.15, inkDensity: 0.85, paperColor: '#efe8d8', paperTex: 0.6, mottle: 0.55,
         grain: 0.1, matte: 0.8 } },
   ];
@@ -59,7 +59,7 @@
       { key: 'method', type: 'choice', options: [
         ['offset', 'オフセット'], ['gravure', 'グラビア'], ['fm', 'FMスクリーン'],
         ['letterpress', '活版'], ['riso', 'リソグラフ'], ['none', '連続階調'] ] },
-      { key: 'freq', label: '線数（画像幅あたりの網点数）', min: 40, max: 1200, scale: 'log', show: (p) => p.method !== 'none' },
+      { key: 'freq', label: '線数（画像幅あたりの網点数）', min: 40, max: 2000, scale: 'log', show: (p) => p.method !== 'none' },
       { key: 'dotShape', label: '網点形状', type: 'choice', options: [['round', '丸'], ['ellipse', 'チェーン'], ['line', 'ライン']],
         show: (p) => AM.includes(p.method) },
       { key: 'angle', label: 'スクリーン角度', min: -45, max: 45, step: 1, unit: '°', show: (p) => AM.includes(p.method) || p.method === 'gravure' },

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OnScreenPrinter マニュアル</title>
+<style>
+:root { --ink: #333; --paper: #fff; --line: #d9d9d9; --muted: #777; --soft: #f5f5f5; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.8 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+}
+.wrap { display: flex; max-width: 1120px; margin: 0 auto; }
+nav {
+  position: sticky; top: 0; align-self: flex-start;
+  width: 220px; flex: none; max-height: 100vh; overflow-y: auto;
+  padding: 32px 16px 32px 24px; font-size: 13px;
+  border-right: 1px solid var(--line);
+}
+nav strong { display: block; margin-bottom: 12px; }
+nav ol { margin: 0; padding-left: 1.4em; }
+nav a { color: var(--ink); text-decoration: none; }
+nav a:hover { text-decoration: underline; }
+main { flex: 1; min-width: 0; padding: 32px 40px 80px; }
+h1 { margin: 0 0 4px; font-size: 24px; }
+.lead { margin: 0 0 32px; color: var(--muted); }
+h2 { margin: 48px 0 12px; padding-bottom: 6px; font-size: 18px; border-bottom: 1px solid var(--ink); }
+h3 { margin: 28px 0 8px; font-size: 15px; }
+p, ul, ol { margin: 0 0 12px; }
+a { color: var(--ink); }
+code, kbd {
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 2px 5px; border: 1px solid var(--line); border-radius: 2px; background: var(--soft);
+}
+table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { font-weight: 600; white-space: nowrap; background: var(--soft); }
+td:first-child { white-space: nowrap; font-weight: 600; }
+figure { margin: 12px 0 20px; }
+figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); }
+figcaption { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.note { margin: 12px 0 16px; padding: 10px 14px; border-left: 3px solid var(--ink); background: var(--soft); }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; margin: 12px 0 16px; }
+.presets figure { margin: 0; }
+.presets b { display: block; margin-top: 6px; font-size: 13px; }
+.presets span { display: block; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.steps { counter-reset: s; list-style: none; padding: 0; }
+.steps li { counter-increment: s; position: relative; padding-left: 36px; margin-bottom: 10px; }
+.steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--ink); color: var(--paper); font-size: 12px; line-height: 24px; text-align: center;
+}
+footer { margin-top: 64px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+
+@media (max-width: 820px) {
+  .wrap { display: block; }
+  nav { position: static; width: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding: 20px 16px; }
+  main { padding: 24px 16px 64px; }
+  td:first-child { white-space: normal; }
+  .table-scroll { overflow-x: auto; }
+}
+@media print {
+  nav { display: none; }
+  .wrap { display: block; }
+  main { padding: 0; }
+  h2 { break-after: avoid; }
+  figure, tr { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav aria-label="目次">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#about">OnScreenPrinter とは</a></li>
+    <li><a href="#start">起動と動作環境</a></li>
+    <li><a href="#screen">画面の見かた</a></li>
+    <li><a href="#flow">基本の使い方</a></li>
+    <li><a href="#view">表示の操作</a></li>
+    <li><a href="#presets">プリセット</a></li>
+    <li><a href="#method">印刷方式</a></li>
+    <li><a href="#color">色味</a></li>
+    <li><a href="#tone">トーン</a></li>
+    <li><a href="#paper">紙と質感</a></li>
+    <li><a href="#scan">スキャン</a></li>
+    <li><a href="#lpi">線数と見え方</a></li>
+    <li><a href="#export">書き出し</a></li>
+    <li><a href="#faq">困ったときは</a></li>
+    <li><a href="#spec">仕様と制限</a></li>
+  </ol>
+</nav>
+<main>
+<h1>OnScreenPrinter マニュアル</h1>
+<p class="lead">写真に、雑誌などの印刷物の質感を与えるツール</p>
+
+<h2 id="about">1. OnScreenPrinter とは</h2>
+<p>写真を、ファッション誌・グラビア誌・新聞・リソグラフなどに<b>印刷したような見た目</b>に変換するツールです。
+フィルタで模様を重ねるのではなく、実際の印刷と同じ順番で計算しています。</p>
+<ol>
+  <li><b>分版</b>：写真を C（シアン）・M（マゼンタ）・Y（イエロー）・K（スミ）の4色のインキ量に分ける</li>
+  <li><b>網点化</b>：インキ量を、印刷方式ごとの網点（小さな点の集まり）に置き換える</li>
+  <li><b>刷り重ね</b>：紙の上に4色のインキを重ねる。版ズレ・にじみ・インキむら・紙の質感もここで加える</li>
+</ol>
+<p>そのため、拡大すると本物の印刷物のようにロゼット模様（4色の網点がつくる花びら状の模様）が見えます。
+さらに「スキャン」をオンにすると、印刷した誌面をスキャナで取り込んだ画像も作れます。</p>
+<p>画像はすべてお使いのブラウザの中で処理されます。インターネットへの送信は一切ありません。</p>
+
+<h2 id="start">2. 起動と動作環境</h2>
+<h3>起動</h3>
+<ol class="steps">
+  <li>配布された zip ファイルを展開（解凍）します。</li>
+  <li>展開したフォルダの中にある <code>index.html</code> をダブルクリックします。</li>
+  <li>ブラウザが開き、サンプル画像が表示されれば準備完了です。</li>
+</ol>
+<p>インストールやインターネット接続は不要です。フォルダごと好きな場所に置いて使えます。
+フォルダ内のファイル構成は変えないでください（<code>css</code>・<code>js</code> フォルダが必要です）。</p>
+
+<h3>動作環境</h3>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>OS</td><td>Windows / macOS（PC での利用を推奨）</td></tr>
+  <tr><td>ブラウザ</td><td>Google Chrome・Microsoft Edge・Safari・Firefox の最新版（WebGL2 に対応していること）</td></tr>
+  <tr><td>グラフィック</td><td>GPU を搭載した PC を推奨。特に「スキャン」は計算量が多いため、GPU がないと非常に遅くなります</td></tr>
+</table>
+<div class="note">iPhone・iPad では、zip の中の HTML を直接開いて使うことができません。仕上がりを iPhone で確認したいときは、PC で書き出した PNG を iPhone に送って見てください。</div>
+
+<h2 id="screen">3. 画面の見かた</h2>
+<figure>
+  <img src="manual/img/overview.jpg" alt="OnScreenPrinter の画面全体。上部にツールバー、左に画像のプレビュー、右に調整パネル">
+  <figcaption>画面全体（プリセット「モード誌」を適用した状態）</figcaption>
+</figure>
+<table>
+  <tr><th>場所</th><th>内容</th></tr>
+  <tr><td>上部のツールバー</td><td>画像を開く・サンプル表示・表示倍率・元画像との比較・書き出し・マニュアル</td></tr>
+  <tr><td>左のプレビュー</td><td>仕上がりを表示します。拡大・移動ができます（<a href="#view">5. 表示の操作</a>）</td></tr>
+  <tr><td>右下の倍率</td><td>現在の表示倍率です。100% のとき、画像の1画素が画面の1画素になります</td></tr>
+  <tr><td>右の調整パネル</td><td>上から順に、プリセット・印刷方式・色味・トーン・紙と質感・スキャン</td></tr>
+</table>
+
+<h2 id="flow">4. 基本の使い方</h2>
+<ol class="steps">
+  <li><b>画像を読み込む</b><br>「画像を開く」を押すか、画像ファイルをプレビューにドラッグ＆ドロップします。コピーした画像を <kbd>Ctrl</kbd>+<kbd>V</kbd>（Mac は <kbd>⌘</kbd>+<kbd>V</kbd>）で貼り付けることもできます。</li>
+  <li><b>プリセットを選ぶ</b><br>まず、目指す雰囲気に近いプリセットを選びます。</li>
+  <li><b>調整する</b><br>右のパネルで、印刷方式・色味・トーン・紙を調整します。「元画像と比較」を押している間は元の写真が表示されます。</li>
+  <li><b>書き出す</b><br>書き出しサイズを選んで「PNG 書き出し」を押すと、画像が保存されます。</li>
+</ol>
+<p>調整した内容はブラウザに自動で保存され、次に開いたときも引き継がれます。最初の状態に戻すには、パネル上部の「リセット」を押します。</p>
+
+<h2 id="view">5. 表示の操作</h2>
+<table>
+  <tr><th>操作</th><th>動作</th></tr>
+  <tr><td>マウスホイール / トラックパッドのピンチ</td><td>カーソル位置を中心に拡大・縮小</td></tr>
+  <tr><td>ドラッグ</td><td>表示位置を移動</td></tr>
+  <tr><td>ダブルクリック</td><td>全体表示と 100% 表示を切り替え</td></tr>
+  <tr><td>「フィット」ボタン</td><td>画像全体が収まるように表示</td></tr>
+  <tr><td>「100%」ボタン</td><td>等倍で表示</td></tr>
+  <tr><td>「元画像と比較」ボタン / <kbd>Space</kbd> キー</td><td>押している間だけ元の写真を表示</td></tr>
+  <tr><td>スライダーの数値をクリック</td><td>その項目だけ初期値に戻す（スライダーのダブルクリックでも可）</td></tr>
+</table>
+<p>網点は画像に対して固定されているので、拡大・縮小しても網点の配置は変わりません。網点の細かさを確かめるときは 100% 以上に拡大してください。</p>
+
+<h2 id="presets">6. プリセット</h2>
+<p>よく使う印刷物の雰囲気をまとめた設定です。押すとすべての項目がその値に変わります（インキむらの出方だけは変わりません）。
+プリセットを選んだあとに項目を動かしても問題ありません。</p>
+<div class="presets">
+  <figure><img src="manual/img/preset_mode.jpg" alt="モード誌の拡大例"><b>モード誌</b><span>コート紙に高精細なオフセット印刷。網点は控えめで、くっきりとした発色。</span></figure>
+  <figure><img src="manual/img/preset_street.jpg" alt="90s ストリート誌の拡大例"><b>90s ストリート誌</b><span>マット紙にやや粗い網点。黒が浅く、少し色あせた印象。</span></figure>
+  <figure><img src="manual/img/preset_gravure.jpg" alt="グラビア誌の拡大例"><b>グラビア誌</b><span>グラビア印刷。網点が目立たず、濃く深いシャドウ。</span></figure>
+  <figure><img src="manual/img/preset_vintage.jpg" alt="70s ヴィンテージの拡大例"><b>70s ヴィンテージ</b><span>退色したインキと日焼けした紙。版ズレとむらが大きめ。</span></figure>
+  <figure><img src="manual/img/preset_scan.jpg" alt="雑誌スキャンの拡大例"><b>雑誌スキャン</b><span>175 線で刷った誌面を A4・300dpi でスキャンした画像。</span></figure>
+  <figure><img src="manual/img/preset_news.jpg" alt="新聞の拡大例"><b>新聞</b><span>新聞紙に粗い網点。インキが薄く、全体に灰色がかる。</span></figure>
+  <figure><img src="manual/img/preset_letterpress.jpg" alt="活版の拡大例"><b>活版</b><span>凸版で押した網点。網点の縁にインキが溜まる。</span></figure>
+  <figure><img src="manual/img/preset_duotone.jpg" alt="モノクロ写真集の拡大例"><b>モノクロ写真集</b><span>スミと特色の2色で刷るダブルトーン。FM スクリーンでなめらか。</span></figure>
+  <figure><img src="manual/img/preset_riso.jpg" alt="リソグラフ ZINE の拡大例"><b>リソグラフ ZINE</b><span>リソ用の蛍光インキ。粒の粗さと版ズレが特徴。</span></figure>
+</div>
+<p>上の図はいずれもサンプル画像の一部を等倍で表示したものです。</p>
+<div class="note">プリセットの線数は、<b>iPhone の画面幅いっぱいに表示して見る</b>ことを前提に決めています。PC の大きな画面で見ると網点が目立って見えます。詳しくは <a href="#lpi">12. 線数と見え方</a> を参照してください。</div>
+
+<h2 id="method">7. 印刷方式</h2>
+<h3>方式の選択</h3>
+<table>
+  <tr><th>方式</th><th>特徴</th></tr>
+  <tr><td>オフセット</td><td>雑誌・チラシなどで最も一般的な印刷。規則正しく並んだ網点の大きさで濃淡を表し、4色が重なるとロゼット模様ができる</td></tr>
+  <tr><td>グラビア</td><td>写真集・グラビア誌向けの印刷。格子状の小さな凹みにインキを溜めるため、濃い部分は網点が溶けてなめらかになり、淡い部分は点が欠けることがある</td></tr>
+  <tr><td>FM スクリーン</td><td>同じ大きさの細かい点を不規則に散らす方式。ロゼット模様が出ず、なめらかで精細</td></tr>
+  <tr><td>活版</td><td>凸版を紙に押し付ける方式。網点の縁にインキが溜まり、輪郭が少し荒れる</td></tr>
+  <tr><td>リソグラフ</td><td>孔版印刷。粒が粗く不規則で、インキむらが縞状に出る</td></tr>
+  <tr><td>連続階調</td><td>網点を使わない（色味・トーン・紙だけを適用）</td></tr>
+</table>
+
+<h3>調整項目</h3>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>線数</td><td>網点の細かさ。<b>画像の横幅に並ぶ網点の数</b>で、大きいほど細かくなります。値の横の「A4換算 ○線」は、画像を A4 の幅に印刷したときの線数（1インチあたりの網点数）です</td></tr>
+  <tr><td>網点形状</td><td>丸・チェーン（楕円が鎖状につながる）・ライン（線）。オフセットと活版のみ</td></tr>
+  <tr><td>スクリーン角度</td><td>網点の並ぶ角度。4色はそれぞれ別の角度（オフセットは C 15°・M 75°・Y 0°・K 45°）で並んでおり、このスライダーは<b>4色をまとめて回転</b>させます</td></tr>
+  <tr><td>ドットゲイン</td><td>印刷で網点が太る量。上げると中間調が濃く、つぶれ気味になります</td></tr>
+  <tr><td>版ズレ</td><td>4色の版の位置ずれ。上げると輪郭に色のずれが出ます</td></tr>
+  <tr><td>インキのにじみ</td><td>網点の輪郭のぼやけ具合</td></tr>
+</table>
+
+<h2 id="color">8. 色味</h2>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>色の数</td><td>フルカラー（CMYK 4色）・スミ1色（白黒）・ダブルトーン（スミ＋特色の2色）</td></tr>
+  <tr><td>インキセット</td><td>使うインキの色。プロセス（標準）・ヴィンテージ（くすんだ古いインキ）・リソ蛍光（リソグラフ用の蛍光インキ）</td></tr>
+  <tr><td>特色</td><td>ダブルトーンで使う2色目のインキの色</td></tr>
+  <tr><td>色温度</td><td>マイナスで青み（寒色）、プラスで黄み（暖色）</td></tr>
+  <tr><td>色かぶり</td><td>マイナスで緑寄り、プラスでマゼンタ寄り</td></tr>
+  <tr><td>彩度</td><td>色の鮮やかさ</td></tr>
+  <tr><td>インキ濃度（全体）</td><td>すべてのインキの濃さ。下げると新聞のように薄く、上げるとこってりした刷り上がりに</td></tr>
+  <tr><td>C / M / Y / K 版の濃度</td><td>各色のインキの濃さを個別に調整。たとえば C を下げると、シアンが退色したような色になります</td></tr>
+  <tr><td>墨版の量（GCR）</td><td>暗い部分を CMY の重ねで表すか、K（スミ）で置き換えるか。上げるほど K が増え、色の濁りが減ります</td></tr>
+  <tr><td>色再現の補正</td><td>インキの色の偏りを見込んで、元の写真の色に近づける度合い。下げると、インキの色がそのまま出た癖のある発色になります</td></tr>
+</table>
+
+<h2 id="tone">9. トーン</h2>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>露出</td><td>全体の明るさ（EV 単位）</td></tr>
+  <tr><td>コントラスト</td><td>明暗の差。プラスで締まった印象に</td></tr>
+  <tr><td>ハイライト</td><td>明るい部分だけの明るさ</td></tr>
+  <tr><td>シャドウ</td><td>暗い部分だけの明るさ</td></tr>
+  <tr><td>フェード</td><td>黒を持ち上げて、古い印刷物のような締まりのない黒にします</td></tr>
+  <tr><td>シャープネス</td><td>マイナスでソフトに、プラスで輪郭を強調</td></tr>
+</table>
+
+<h2 id="paper">10. 紙と質感</h2>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>紙色</td><td>紙の種類（コート紙・マットコート紙・上質紙・更紙・新聞紙・日焼けした古紙）を選ぶか、右の色見本から自由に指定します</td></tr>
+  <tr><td>紙の質感</td><td>紙の繊維や細かな斑点の強さ</td></tr>
+  <tr><td>インキむら</td><td>インキの乗り方の不均一さ。大きなむらと細かなむらが重なって出ます</td></tr>
+  <tr><td>粒状感</td><td>全体にかかる細かな粒</td></tr>
+  <tr><td>黒の浮き</td><td>紙の表面の反射で黒が浅くなる度合い。マット紙・新聞紙らしさが出ます</td></tr>
+  <tr><td>むら・紙目を乱数で作り直す</td><td>インキむら・紙の質感・粒状感の<b>出方（模様の配置）</b>を変えます。強さは変わりません</td></tr>
+</table>
+<p>むらの出方は、画像を読み込むたびに自動で変わります。複数の写真を書き出しても、同じ場所に同じむらが出ることはありません。</p>
+
+<h2 id="scan">11. スキャン</h2>
+<p>印刷した誌面を、スキャナで取り込んだような画像を作ります。オンにすると、画像の横幅を A4 の幅（横長の画像は A4 横置きの幅）とみなし、
+指定した解像度の画素ごとに網点を平均します。網点がぼけて溶ける様子や、網点とスキャナの画素が干渉してできる細かな模様が再現されます。</p>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>オン / オフ</td><td>スキャンの再現を使うかどうか</td></tr>
+  <tr><td>解像度</td><td>150dpi・300dpi・600dpi。書き出す画像の大きさもこの解像度で決まります</td></tr>
+  <tr><td>ぼかし</td><td>スキャナのレンズのぼけ（画素単位）。小さいと網点の模様が残り、大きいと網点が消えてなめらかになります</td></tr>
+</table>
+<h3>雑誌スキャンらしく見せるコツ</h3>
+<ul>
+  <li>線数は「A4換算」が <b>150〜175線</b> になるように合わせます（プリセット「雑誌スキャン」は 175線）。</li>
+  <li>解像度は 300dpi、ぼかしは 0.5〜0.8px 程度から始めます。</li>
+  <li>網点の模様を残したいときはぼかしを下げ、印刷っぽさを弱めたいときは上げます。</li>
+</ul>
+<div class="note">スキャンは1画素ごとに多くの計算をするため、通常の表示より重くなります。スライダーの反応が遅いときは、先にスキャンをオフにして調整し、最後にオンにすると快適です。</div>
+
+<h2 id="lpi">12. 線数と見え方</h2>
+<p>線数は「画像の横幅に並ぶ網点の数」です。同じ線数でも、<b>画像を表示する大きさによって網点の見え方が変わります</b>。</p>
+<table>
+  <tr><th>見る環境</th><th>網点の見え方</th></tr>
+  <tr><td>iPhone で画面幅いっぱいに表示</td><td>プリセットの線数でちょうどよく見えるように調整済み</td></tr>
+  <tr><td>PC の大きな画面で表示</td><td>網点が大きく見え、ロゼット模様が目立ちます。目立ちすぎるときは線数を 1.5〜2倍に上げてください</td></tr>
+</table>
+<p>網点の細かさよりも「スキャンした雑誌」の質感を出したい場合は、<a href="#scan">スキャン</a>を使うと、表示環境に左右されにくい仕上がりになります。</p>
+
+<h2 id="export">13. 書き出し</h2>
+<p>ツールバー右の「PNG 書き出し」で、現在の設定を適用した画像を PNG 形式で保存します。ファイル名は「元のファイル名_プリセットの英字名.png」です（例：<code>photo_mode.png</code>。プリセット適用後に項目を動かした場合は <code>photo_custom.png</code>）。</p>
+<table>
+  <tr><th>設定</th><th>書き出すサイズ</th></tr>
+  <tr><td>原寸</td><td>読み込んだ画像と同じ大きさ（長辺 4096px まで）</td></tr>
+  <tr><td>2倍</td><td>縦横2倍の大きさ。網点の形がより精細に出ます（長辺 8192px まで）</td></tr>
+  <tr><td>スキャンがオンのとき</td><td>スキャン解像度で決まる大きさ（例：A4・300dpi なら横 2480px）。サイズの選択は無効になります</td></tr>
+</table>
+<div class="note">書き出した画像を SNS などに投稿すると、サービス側で縮小・圧縮されて網点がつぶれたり、縞模様（モアレ）が出たりすることがあります。投稿先の表示サイズに近い大きさで書き出すと防ぎやすくなります。</div>
+
+<h2 id="faq">14. 困ったときは</h2>
+<h3>「WebGL2 が使えないため動作しません」と表示される</h3>
+<p>ブラウザが WebGL2 に対応していないか、無効になっています。Chrome・Edge・Safari・Firefox の最新版でお試しください。Chrome の場合は、設定の「システム」で「グラフィック アクセラレーションが使用可能な場合は使用する」をオンにしてください。</p>
+<h3>動作が重い</h3>
+<ul>
+  <li>スキャンをオフにして調整し、最後にオンにしてください。</li>
+  <li>表示を「フィット」にすると、拡大表示より軽くなります。</li>
+  <li>非常に大きな画像は、あらかじめ長辺 4000px 程度に縮小しておくと快適です。</li>
+</ul>
+<h3>ロゼット模様（網点）が目立ちすぎる / 見えない</h3>
+<p>線数を調整してください。目立ちすぎるときは上げ、見えないときは下げます。表示倍率でも見え方が変わるので、100% 表示で確認してください。</p>
+<h3>色がくすむ・濁る</h3>
+<p>「色再現の補正」を上げる、「墨版の量」を下げる、「黒の浮き」を下げる、の順に試してください。</p>
+<h3>設定が初期状態に戻ってしまう</h3>
+<p>設定はブラウザに保存されます。プライベートブラウズ（シークレットモード）や、閉じるときに閲覧データを消す設定では保存されません。また、フォルダを移動すると別のファイルとして扱われ、設定が引き継がれないことがあります。</p>
+<h3>プリセットを更新したのに見た目が変わらない</h3>
+<p>前回の調整内容が保存されているためです。プリセットのボタンを押し直すと、最新の値が適用されます。</p>
+
+<h2 id="spec">15. 仕様と制限</h2>
+<table>
+  <tr><th>項目</th><th>内容</th></tr>
+  <tr><td>読み込める画像</td><td>JPEG・PNG・WebP など、ブラウザが表示できる形式</td></tr>
+  <tr><td>処理する解像度</td><td>長辺 4096px まで。これより大きい画像は縮小して処理します</td></tr>
+  <tr><td>書き出し</td><td>PNG 形式、長辺 8192px まで</td></tr>
+  <tr><td>色の扱い</td><td>sRGB の画像として処理します。カラープロファイル（Adobe RGB など）や CMYK の画像の色は正確には扱えません</td></tr>
+  <tr><td>印刷用データ</td><td>見た目を再現するツールです。印刷会社に入稿する CMYK データの作成には使えません</td></tr>
+  <tr><td>通信</td><td>なし。画像も設定も外部に送信しません</td></tr>
+</table>
+
+<footer>OnScreenPrinter v1.0</footer>
+</main>
+</div>
+</body>
+</html>

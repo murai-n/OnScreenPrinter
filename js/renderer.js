@@ -291,12 +291,17 @@ void main() {
     const int N = 4;
     float sigma = max(u_scanBlur, 0.35);
     float R = max(0.5, 2.0 * sigma);
-    float tapPpc = ppc * float(N) / (2.0 * R);
+    // 網点の輪郭は鋭く計算する。輪郭をぼかすと極小の網点が実際より大きく数えられ、淡い部分に段差が出る
+    float tapPpc = max(ppc * float(N) / (2.0 * R) * 6.0, 16.0);
+    vec2 jit = vec2(hash21(gl_FragCoord.xy), hash21(gl_FragCoord.yx + 17.3));
+    float ja = hash21(gl_FragCoord.xy * 1.7 + 5.1) * TAU;
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
     for (int y = 0; y < N; y++) {
       for (int x = 0; x < N; x++) {
-        vec2 d = ((vec2(float(x), float(y)) + 0.5) / float(N) * 2.0 - 1.0) * R;
+        // 標本位置を画素ごとに回転・ずらす (固定位置だと網点の大きさが段階的にしか拾えず、階調に段差が出る)
+        vec2 d = ((vec2(float(x), float(y)) + jit) / float(N) * 2.0 - 1.0) * R;
+        d = rot(ja) * d;
         float w = exp(-dot(d, d) / (2.0 * sigma * sigma));
         acc += w * inkLayer(v_uv + d / vec2(u_ppw, u_ppw * aspect), aspect, val, tapPpc, mott);
         wsum += w;

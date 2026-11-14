@@ -30,7 +30,7 @@ h1 { margin: 0; font-size: 13px; font-weight: 600; }
 .tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: auto; }
 .sep { width: 1px; height: 16px; background: var(--line); margin: 0 6px; }
 
-button, select {
+button, select, a.btn {
   font: inherit;
   color: var(--ink);
   background: var(--paper);
@@ -39,7 +39,8 @@ button, select {
   padding: 3px 9px;
   cursor: pointer;
 }
-button:hover, select:hover { border-color: var(--ink); }
+a.btn { text-decoration: none; display: inline-block; line-height: inherit; }
+button:hover, select:hover, a.btn:hover { border-color: var(--ink); }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 button.primary, button.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 button:disabled { opacity: 0.5; cursor: progress; }

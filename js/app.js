@@ -48,9 +48,9 @@
       p: { method: 'fm', freq: 900, colorMode: 'duotone', spotColor: '#9a7b5c', dotGain: 0.1, misreg: 0.02,
         spread: 0.2, contrast: 0.2, paperColor: '#f2eee4', paperTex: 0.25, mottle: 0.08, grain: 0.12, matte: 0.3 } },
     { id: 'riso', label: 'リソグラフ ZINE', note: '蛍光インキ・版ズレ・粒状感',
-      p: { method: 'riso', freq: 520, inkSet: 'riso', accuracy: 0.25, gcr: 0.85, dotGain: 0.1, misreg: 0.9,
-        spread: 0.35, contrast: 0.15, inkDensity: 0.85, paperColor: '#efe8d8', paperTex: 0.6, mottle: 0.55,
-        grain: 0.1, matte: 0.8 } },
+      p: { method: 'riso', freq: 520, inkSet: 'riso', gcr: 0.45, dotGain: 0.05, misreg: 0.5,
+        spread: 0.3, contrast: 0.15, sat: 0.12, paperColor: '#f2eee4', paperTex: 0.5, mottle: 0.35,
+        grain: 0.08, matte: 0.3 } },
   ];
 
   const AM = ['offset', 'letterpress'];

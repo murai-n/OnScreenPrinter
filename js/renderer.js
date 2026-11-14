@@ -206,7 +206,8 @@ float screenFM(int i, vec2 q, float v, float ppc, float rough) {
   vec2 g = q * u_freq + vec2(float(i) * 37.3, float(i) * 17.7);
   vec2 cell = floor(g);
   float thr = texture(u_blue, (cell + 0.5) / float(${BLUE_N})).r;
-  thr = mix(thr, hash21(cell + float(i) * 7.0), rough);
+  // しきい値の分布を一様に保ったまま乱す (偏ると階調が潰れる)
+  thr = fract(thr + (hash21(cell + float(i) * 7.0) - 0.5) * rough);
   // しきい値を超えたセルに角丸の点を置く。淡部では小さな孤立点、濃部ではセルを埋める
   vec2 f = abs(fract(g) - 0.5);
   float d = pow(pow(f.x, 4.0) + pow(f.y, 4.0), 0.25);

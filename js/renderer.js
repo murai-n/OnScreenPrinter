@@ -266,7 +266,7 @@ void main() {
     else if (u_method == 2) cov = screenFM(i, qi, v, ppc, 0.0);
     else if (u_method == 3) cov = screenGravure(i, qi, v, ppc);
     else if (u_method == 4) cov = screenAM(i, qi, v, ppc, true, dm);
-    else if (u_method == 5) cov = screenFM(i, qi, v, ppc, 0.4);
+    else if (u_method == 5) cov = screenFM(i, qi, v, ppc, 0.25);
     vec3 T = pow(u_ink[i], vec3(max(0.0, u_dens[i] * mott * dm)));
     res *= mix(vec3(1.0), T, cov);
   }

@@ -481,6 +481,11 @@
     if (busy) return;
     const files = [...(e.clipboardData ? e.clipboardData.items : [])]
       .filter((i) => i.type.startsWith('image/')).map((i) => i.getAsFile()).filter(Boolean);
+    if (!files.length) {
+      const st = parseSettings(e.clipboardData && e.clipboardData.getData('text/plain'));
+      if (st) { e.preventDefault(); applySettings(st); }
+      return;
+    }
     addFiles(files.map((file, n) => ({ file, path: files.length > 1 ? `pasted_${n + 1}.png` : 'pasted.png' })));
   });
 
@@ -589,25 +594,189 @@
     sc.disabled = params.scan === 'on';
     sc.title = sc.disabled ? 'スキャン時はスキャン解像度のまま書き出します' : '';
   }
-  function setParam(key, value) {
-    params[key] = value;
-    presetId = 'custom';
+  // ---------- 履歴 (元に戻す / やり直す)
+  // 設定の変更を1操作ずつ記録する。むらの出方 (seed) は画像ごとのものなので対象外。
+  // スライダーは、押してから離すまで (または手を止めて 0.8 秒たつまで) を1操作にまとめる
+  const HISTORY_MAX = 100;
+  const undoStack = [];
+  const redoStack = [];
+  let openGroup = null;
+  let groupTimer = null;
+  const snapshot = () => ({ params: { ...params }, presetId });
+  const stateKey = (st) => JSON.stringify({ ...st.params, seed: 0 }) + st.presetId;
+
+  function closeGroup() {
+    openGroup = null;
+    clearTimeout(groupTimer);
+    groupTimer = null;
+  }
+  /** mutate() で設定を変える。group を渡すと、同じ group の連続した変更を1操作にまとめる */
+  function change(mutate, group) {
+    const before = snapshot();
+    mutate();
+    if (stateKey(before) === stateKey(snapshot())) return;
+    if (!group || group !== openGroup) {
+      undoStack.push(before);
+      if (undoStack.length > HISTORY_MAX) undoStack.shift();
+      openGroup = group || null;
+    }
+    redoStack.length = 0;
+    clearTimeout(groupTimer);
+    groupTimer = group ? setTimeout(closeGroup, 800) : null;
+    if (!group) openGroup = null;
+    applied();
+  }
+  function restore(st) {
+    params = { ...st.params, seed: params.seed };
+    presetId = st.presetId;
+    applied();
+  }
+  function undo() {
+    closeGroup();
+    if (!undoStack.length) return;
+    redoStack.push(snapshot());
+    restore(undoStack.pop());
+    toast('元に戻しました');
+  }
+  function redo() {
+    closeGroup();
+    if (!redoStack.length) return;
+    undoStack.push(snapshot());
+    restore(redoStack.pop());
+    toast('やり直しました');
+  }
+  function applied() {
     refreshUI();
     save();
     requestRender();
+    $('#btn-undo').disabled = !undoStack.length;
+    $('#btn-redo').disabled = !redoStack.length;
+  }
+
+  function setParam(key, value, group) {
+    change(() => {
+      params[key] = value;
+      presetId = 'custom';
+    }, group);
   }
   function reseed() {
     params.seed = Math.floor(Math.random() * 1e6);
+    if (current >= 0 && items[current]) items[current].seed = params.seed;   // 一括書き出しにも反映する
     save();
     requestRender();
   }
   function applyPreset(p) {
-    params = { ...DEFAULTS, ...p.p, seed: params.seed };
-    presetId = p.id;
-    refreshUI();
-    save();
-    requestRender();
+    change(() => {
+      params = { ...DEFAULTS, ...p.p, seed: params.seed };
+      presetId = p.id;
+    });
   }
+
+  // ---------- 設定のコピー / 貼り付け
+  const SETTINGS_APP = 'OnScreenPrinter';
+  function settingsText() {
+    const { seed, ...rest } = params;
+    return JSON.stringify({ app: SETTINGS_APP, v: 1, preset: presetId, params: rest });
+  }
+  /** 貼り付けられた文字から設定を取り出す。設定でなければ null */
+  function parseSettings(text) {
+    if (!text) return null;
+    const i = text.indexOf('{'), j = text.lastIndexOf('}');
+    if (i < 0 || j <= i) return null;
+    let obj;
+    try { obj = JSON.parse(text.slice(i, j + 1)); } catch (e) { return null; }
+    if (!obj || obj.app !== SETTINGS_APP || typeof obj.params !== 'object') return null;
+    const schemaItems = {};
+    for (const sec of SCHEMA) for (const it of sec.items) if (it.key) schemaItems[it.key] = it;
+    const out = { ...DEFAULTS };
+    let n = 0;
+    for (const [k, v] of Object.entries(obj.params)) {
+      const it = schemaItems[k];
+      if (!it || typeof v !== typeof DEFAULTS[k]) continue;
+      if (typeof v === 'number') {
+        if (!isFinite(v)) continue;
+        out[k] = Math.min(it.max, Math.max(it.min, v));
+      } else if (it.type === 'choice') {
+        if (!it.options.some(([val]) => val === v)) continue;
+        out[k] = v;
+      } else if (it.type === 'color' || it.type === 'paper') {
+        if (!/^#[0-9a-f]{6}$/i.test(v)) continue;
+        out[k] = v.toLowerCase();
+      } else continue;
+      n++;
+    }
+    if (!n) return null;
+    const known = PRESETS.some((p) => p.id === obj.preset);
+    return { params: out, presetId: known ? obj.preset : 'custom' };
+  }
+  function applySettings(st) {
+    change(() => {
+      params = { ...st.params, seed: params.seed };
+      presetId = st.presetId;
+    });
+    toast('設定を貼り付けました');
+  }
+
+  let toastTimer = null;
+  function toast(text) {
+    const t = $('#toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  async function copySettings() {
+    const text = settingsText();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      // クリップボード API が使えないときの代替
+      const ta = el('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.append(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      if (!ok) { window.prompt('この文字をコピーしてください', text); return; }
+    }
+    toast('設定をコピーしました');
+  }
+  async function pasteSettings() {
+    let text = null;
+    try { text = await navigator.clipboard.readText(); } catch (e) { /* 読み取りが許可されないブラウザ */ }
+    if (text == null) {
+      toast(`${MOD}+V で貼り付けてください`);
+      return;
+    }
+    const st = parseSettings(text);
+    if (st) applySettings(st);
+    else toast('クリップボードに設定が入っていません');
+  }
+
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const MOD = MAC ? '⌘' : 'Ctrl';
+  $('#btn-undo').title = `元に戻す（${MOD}+Z）`;
+  $('#btn-redo').title = `やり直す（${MAC ? '⌘+Shift+Z' : 'Ctrl+Y'}）`;
+  $('#btn-undo').addEventListener('click', undo);
+  $('#btn-redo').addEventListener('click', redo);
+  $('#btn-copy').addEventListener('click', copySettings);
+  $('#btn-paste').addEventListener('click', pasteSettings);
+  window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+  });
+  // 何も選択していないときの Ctrl+C / ⌘+C は設定のコピー
+  document.addEventListener('copy', (e) => {
+    if (String(window.getSelection())) return;
+    e.clipboardData.setData('text/plain', settingsText());
+    e.preventDefault();
+    toast('設定をコピーしました');
+  });
 
   function buildSlider(item) {
     const row = el('div', 'row slider ' + (item.cls || ''));
@@ -625,8 +794,9 @@
     label.htmlFor = input.id;
     input.addEventListener('input', () => {
       const v = parseFloat(input.value);
-      setParam(item.key, log ? Math.round(Math.pow(2, v)) : v);
+      setParam(item.key, log ? Math.round(Math.pow(2, v)) : v, 'slider:' + item.key);
     });
+    input.addEventListener('change', closeGroup);   // スライダーを離したら1操作の区切り
     const reset = () => setParam(item.key, DEFAULTS[item.key]);
     input.addEventListener('dblclick', reset);
     val.title = 'クリックで初期値に戻す';
@@ -668,7 +838,8 @@
     input.type = 'color';
     input.id = 'p-' + item.key;
     label.htmlFor = input.id;
-    input.addEventListener('input', () => setParam(item.key, input.value));
+    input.addEventListener('input', () => setParam(item.key, input.value, 'color:' + item.key));
+    input.addEventListener('change', closeGroup);
     row.append(label);
     if (item.type === 'paper') {
       const sel = el('select');
@@ -717,7 +888,7 @@
     }
     controls.append(d);
   }
-  $('#btn-reset').addEventListener('click', () => applyPreset({ id: 'custom', p: {} }));
+  $('#btn-reset').addEventListener('click', () => { applyPreset({ id: 'custom', p: {} }); toast('初期設定に戻しました（元に戻すで取り消せます）'); });
 
   refreshUI();
   loadSample();

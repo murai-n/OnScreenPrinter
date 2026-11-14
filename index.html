@@ -40,6 +40,7 @@
       <canvas id="view"></canvas>
       <div id="hint">画像・フォルダをドラッグ＆ドロップ / 貼り付け　・　ホイールで拡大、ドラッグで移動</div>
       <div id="zoom">100%</div>
+      <div id="toast" role="status" aria-live="polite"></div>
       <div id="fatal" hidden></div>
     </section>
     <section id="strip" hidden aria-label="読み込んだ画像">
@@ -54,6 +55,13 @@
     </section>
   </div>
   <aside id="panel">
+    <div class="panel-tools">
+      <button id="btn-undo" type="button" class="icon" aria-label="元に戻す" disabled>↶</button>
+      <button id="btn-redo" type="button" class="icon" aria-label="やり直す" disabled>↷</button>
+      <span class="grow"></span>
+      <button id="btn-copy" type="button" title="設定を文字としてコピーします。メモやチャットに貼って共有できます">設定をコピー</button>
+      <button id="btn-paste" type="button" title="コピーした設定を読み込みます">貼り付け</button>
+    </div>
     <div class="panel-head">
       <h2>プリセット</h2>
       <button id="btn-reset" type="button">リセット</button>

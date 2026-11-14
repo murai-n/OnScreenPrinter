@@ -207,10 +207,10 @@ float screenFM(int i, vec2 q, float v, float ppc, float rough) {
   vec2 cell = floor(g);
   float thr = texture(u_blue, (cell + 0.5) / float(${BLUE_N})).r;
   thr = mix(thr, hash21(cell + float(i) * 7.0), rough);
-  // しきい値を超えたセルに角丸の点を置く。点は 75% の大きさで現れ、濃くなるとセルを埋める
+  // しきい値を超えたセルに角丸の点を置く。淡部では小さな孤立点、濃部ではセルを埋める
   vec2 f = abs(fract(g) - 0.5);
   float d = pow(pow(f.x, 4.0) + pow(f.y, 4.0), 0.25);
-  float R = 0.5 * clamp(0.75 + (v - thr) * 6.0, 0.0, 1.25);
+  float R = 0.5 * clamp(mix(0.75, 1.25, smoothstep(0.25, 0.6, v)) + (v - thr) * 6.0, 0.0, 1.25);
   float aaw = 1.0 + u_spread * 0.35 * ppc;
   float cov = step(thr, v) * clamp((R - d) * ppc / aaw + 0.5, 0.0, 1.0);
   cov = edgeGuard(cov, v);

@@ -128,6 +128,7 @@ uniform vec3 u_bg;
 uniform int u_scan;           // 1: スキャナの画素格子へ描画中
 uniform float u_scanBlur;     // スキャナ光学系のぼけ (σ, スキャン画素)
 uniform vec2 u_seed;          // むら・紙目・粒状の乱数オフセット
+uniform float u_blur;         // 網点のぼかし (σ, 網点の間隔を 1 とする単位)
 ${COMMON}
 const float TAU = 6.2831853;
 
@@ -153,14 +154,18 @@ float chan(vec4 v, int i) { return i == 0 ? v.r : (i == 1 ? v.g : (i == 2 ? v.b 
 
 // 版 i の網点面積率を読む (ぼかし / シャープを含む)
 float readCh(int i, vec2 uv) {
-  float lod0 = max(0.0, log2(u_img.x / u_ppw));
+  float lodView = max(0.0, log2(u_img.x / u_ppw));   // 表示倍率だけで決まる lod
+  float lod0 = lodView;
   if (u_scan == 1) lod0 = max(lod0, log2(max(1.0, 2.5 * u_scanBlur * u_img.x / u_ppw)));
+  lod0 = max(lod0, log2(max(1.0, 2.5 * u_blur * u_img.x / u_freq)));   // 網点と同じぼけを絵柄にも
   float soft = max(0.0, -u_sharp);
   float lod = max(lod0, log2(1.0 + soft * u_img.x / 250.0));
   float e = chan(textureLod(u_cmyk, uv, lod), i);
   if (u_sharp > 0.0) {
-    float b = chan(textureLod(u_cmyk, uv, lod + 2.0), i);
-    e += u_sharp * 1.5 * (e - b);
+    // シャープは印刷前に細かい半径で掛かり、そのあとでぼける。ぼかしで lod が上がった分だけ効きを弱め、
+    // ぼけた画像に広い半径のシャープが掛かって輪郭に白い縁取りが出るのを防ぐ
+    float b = chan(textureLod(u_cmyk, uv, lod + 1.0), i);
+    e += u_sharp * 1.5 * exp2(-1.5 * (lod - lodView)) * (e - b);
   }
   e = clamp(e, 0.0, 1.0);
   return 1.0 - pow(1.0 - e, 2.2);
@@ -174,8 +179,33 @@ float screenAngle(int i) {
   return radians(u_angle + (i == 0 ? 15.0 : (i == 1 ? 75.0 : (i == 2 ? 0.0 : 45.0))));
 }
 
+// 標準正規分布の累積分布関数 (近似)
+float Phi(float z) { return 0.5 + 0.5 * tanh(0.7978845608 * (z + 0.044715 * z * z * z)); }
+// 幅 2h の帯が間隔 1 で並ぶ模様を、σ のガウスでぼかした値。x は帯の中心からの位置
+float bandBlur(float x, float h, float sg) {
+  float r = 0.0;
+  for (int n = -1; n <= 1; n++) {
+    float c = x - float(n);
+    r += Phi((c + h) / sg) - Phi((c - h) / sg);
+  }
+  return r;
+}
+// 網点をガウスでぼかした面積率を式で求める (正方形の網点で近似。ぼけが網点の形の差より大きいので見分けはつかない)
+// g は網点格子の座標。平均は常に v に一致する
+float blurredAM(vec2 g, float v, float sg) {
+  if (u_shape == 2) return bandBlur(fract(g.x) - 0.5, 0.5 * v, sg);
+  vec2 c = fract(g + 0.5) - 0.5;            // 網点の中心 (整数格子) からの位置
+  vec2 hc = fract(g) - 0.5;                 // 抜け (半整数格子) からの位置
+  float hd = 0.5 * sqrt(v);
+  float dotP = bandBlur(c.x, hd, sg) * bandBlur(c.y, hd, sg);
+  float hh = 0.5 * sqrt(1.0 - v);
+  float holeP = 1.0 - bandBlur(hc.x, hh, sg) * bandBlur(hc.y, hh, sg);
+  return mix(dotP, holeP, smoothstep(0.4, 0.6, v));
+}
+
 // AM スクリーン (オフセット / 活版)。dm はインキ膜厚の倍率 (活版のマージナルゾーン用)
-float screenAM(int i, vec2 q, float v, float ppc, bool press, out float dm) {
+// sgT は網点に掛かるぼけの合計 (σ, 網点間隔単位)。大きいときは式で求めたぼけた網点を使う
+float screenAM(int i, vec2 q, float v, float ppc, bool press, float sgT, out float dm) {
   dm = 1.0;
   vec2 g = rot(screenAngle(i)) * q * u_freq;
   float e, gr;
@@ -202,7 +232,12 @@ float screenAM(int i, vec2 q, float v, float ppc, bool press, out float dm) {
     float rim = exp(-pow(d / 0.07, 2.0));
     dm = mix(1.0, 0.68 + 0.8 * rim, vis);
   }
-  return mix(v, cov, vis);
+  float sharp = mix(v, cov, vis);
+  float t = smoothstep(0.06, 0.16, sgT);
+  if (t <= 0.0) return sharp;
+  dm = mix(dm, 1.0, t);
+  float soft = sgT > 0.6 ? v : blurredAM(g, v, sgT);
+  return mix(sharp, soft, t);
 }
 
 // FM (ストキャスティック) スクリーン。rough > 0 でリソグラフ風の荒れた粒
@@ -216,7 +251,7 @@ float screenFM(int i, vec2 q, float v, float ppc, float rough) {
   vec2 f = abs(fract(g) - 0.5);
   float d = pow(pow(f.x, 4.0) + pow(f.y, 4.0), 0.25);
   float R = 0.5 * clamp(mix(0.75, 1.25, smoothstep(0.25, 0.6, v)) + (v - thr) * 6.0, 0.0, 1.25);
-  float aaw = 1.0 + u_spread * 0.35 * ppc;
+  float aaw = 1.0 + (u_spread * 0.35 + u_blur * 1.5) * ppc;
   float cov = step(thr, v) * clamp((R - d) * ppc / aaw + 0.5, 0.0, 1.0);
   cov = edgeGuard(cov, v);
   return mix(v, cov, smoothstep(1.3, 3.0, ppc));
@@ -241,7 +276,8 @@ float screenGravure(int i, vec2 q, float v, float ppc) {
 }
 
 // 4版ぶんのインキ層の透過率。val は各版の網点面積率、ppc は網点1個あたりの標本数
-vec3 inkLayer(vec2 uv, float aspect, vec4 val, float ppc, float mott) {
+// sgAM: AM 網点に掛かるぼけ (σ)。atten: FM・グラビア・リソの網点の模様を残す割合
+vec3 inkLayer(vec2 uv, float aspect, vec4 val, float ppc, float mott, float sgAM, float atten) {
   vec3 r = vec3(1.0);
   for (int i = 0; i < 4; i++) {
     vec2 uvi = uv + u_misreg[i];
@@ -249,11 +285,12 @@ vec3 inkLayer(vec2 uv, float aspect, vec4 val, float ppc, float mott) {
     float v = val[i];
     float dm = 1.0;
     float cov = v;
-    if (u_method == 1) cov = screenAM(i, qi, v, ppc, false, dm);
+    if (u_method == 1) cov = screenAM(i, qi, v, ppc, false, sgAM, dm);
     else if (u_method == 2) cov = screenFM(i, qi, v, ppc, 0.0);
     else if (u_method == 3) cov = screenGravure(i, qi, v, ppc);
-    else if (u_method == 4) cov = screenAM(i, qi, v, ppc, true, dm);
+    else if (u_method == 4) cov = screenAM(i, qi, v, ppc, true, sgAM, dm);
     else if (u_method == 5) cov = screenFM(i, qi, v, ppc, 0.25);
+    if (u_method == 2 || u_method == 3 || u_method == 5) cov = v + (cov - v) * atten;
     vec3 T = pow(u_ink[i], vec3(max(0.0, u_dens[i] * mott * dm)));
     r *= mix(vec3(1.0), T, cov);
   }
@@ -285,32 +322,12 @@ void main() {
     val[i] = clamp(v + u_dotGain * 4.0 * v * (1.0 - v), 0.0, 1.0);
   }
 
-  vec3 ink;
-  if (u_scan == 1) {
-    // スキャン: 画素ごとに、網点をガウス窓で積分する (網点と画素格子の干渉もここで生じる)
-    const int N = 4;
-    float sigma = max(u_scanBlur, 0.35);
-    float R = max(0.5, 2.0 * sigma);
-    // 網点の輪郭は鋭く計算する。輪郭をぼかすと極小の網点が実際より大きく数えられ、淡い部分に段差が出る
-    float tapPpc = max(ppc * float(N) / (2.0 * R) * 6.0, 16.0);
-    vec2 jit = vec2(hash21(gl_FragCoord.xy), hash21(gl_FragCoord.yx + 17.3));
-    float ja = hash21(gl_FragCoord.xy * 1.7 + 5.1) * TAU;
-    vec3 acc = vec3(0.0);
-    float wsum = 0.0;
-    for (int y = 0; y < N; y++) {
-      for (int x = 0; x < N; x++) {
-        // 標本位置を画素ごとに回転・ずらす (固定位置だと網点の大きさが段階的にしか拾えず、階調に段差が出る)
-        vec2 d = ((vec2(float(x), float(y)) + jit) / float(N) * 2.0 - 1.0) * R;
-        d = rot(ja) * d;
-        float w = exp(-dot(d, d) / (2.0 * sigma * sigma));
-        acc += w * inkLayer(v_uv + d / vec2(u_ppw, u_ppw * aspect), aspect, val, tapPpc, mott);
-        wsum += w;
-      }
-    }
-    ink = acc / wsum;
-  } else {
-    ink = inkLayer(v_uv, aspect, val, ppc, mott);
-  }
+  // ぼけの合計。スキャン時はスキャナのぼけ、通常時は表示画素の大きさを加える (どちらも網点間隔単位)
+  float sgPix = u_scan == 1 ? max(u_scanBlur, 0.35) / ppc : 0.4 / ppc;
+  float sgAM = sqrt(u_blur * u_blur + sgPix * sgPix);
+  float sgOther = u_blur * u_blur + (u_scan == 1 ? sgPix * sgPix : 0.0);
+  float atten = exp(-2.0 * 9.8696 * sgOther * 1.2);
+  vec3 ink = inkLayer(v_uv, aspect, val, u_scan == 1 ? max(ppc, 1.0) : ppc, mott, sgAM, atten);
   vec3 res = paper * ink;
 
   // 表面反射による黒浮き (マット感)
@@ -603,6 +620,7 @@ void main() {
       gl.uniform1i(pr.loc('u_bypass'), t.bypass ? 1 : 0);
       gl.uniform1i(pr.loc('u_scan'), t.scan ? 1 : 0);
       gl.uniform1f(pr.loc('u_scanBlur'), P.scanBlur);
+      gl.uniform1f(pr.loc('u_blur'), P.method === 'none' ? 0 : P.blur * 0.5);
       const frac = (x) => x - Math.floor(x);
       gl.uniform2f(pr.loc('u_seed'), 2 * frac(Math.sin(P.seed * 12.9898) * 43758.5453), 2 * frac(Math.sin(P.seed * 78.233) * 43758.5453));
       gl.uniform1f(pr.loc('u_freq'), P.freq);
@@ -693,8 +711,11 @@ void main() {
       this._print(P, inks, { fbo: null, w: cw, h: ch, originX: view.tx, originY: view.ty, extentW, extentH, flip: -1, bypass, scan: false });
     }
 
-    /** 画像全体を PNG Blob にする。スキャン時はスキャン画素数そのまま、それ以外は作業解像度の k 倍 */
-    exportBlob(P, k) {
+    /**
+     * 画像全体を書き出す。opts = {longSide: 長辺の画素数, type: 'image/jpeg' | 'image/png'}
+     * スキャン時は longSide を使わず、スキャン解像度で決まる大きさにする
+     */
+    exportBlob(P, opts) {
       const canvas = this.canvas;
       const prevW = canvas.width, prevH = canvas.height;
       if (P.scan === 'on') {
@@ -702,14 +723,15 @@ void main() {
         canvas.width = sz.w;
         canvas.height = sz.h;
       } else {
-        k = Math.min(k, this.maxExport / Math.max(this.imgW, this.imgH));
-        canvas.width = Math.round(this.imgW * k);
-        canvas.height = Math.round(this.imgH * k);
+        const k = Math.min(opts.longSide, this.maxExport) / Math.max(this.imgW, this.imgH);
+        canvas.width = Math.max(1, Math.round(this.imgW * k));
+        canvas.height = Math.max(1, Math.round(this.imgH * k));
       }
       this.render(P, { scale: canvas.width / this.imgW, tx: 0, ty: 0 }, null);
       const size = { w: canvas.width, h: canvas.height };
       return new Promise((resolve, reject) => {
-        canvas.toBlob((blob) => (blob ? resolve({ blob, ...size }) : reject(new Error('書き出しに失敗しました'))), 'image/png');
+        canvas.toBlob((blob) => (blob ? resolve({ blob, ...size }) : reject(new Error('書き出しに失敗しました'))),
+          opts.type, opts.type === 'image/jpeg' ? 0.92 : undefined);
         canvas.width = prevW;
         canvas.height = prevH;
       });

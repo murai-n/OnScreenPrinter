@@ -12,7 +12,7 @@
     // トーン
     exposure: 0, contrast: 0, highlights: 0, shadows: 0, fade: 0, sharp: 0,
     // 紙と質感
-    paperColor: '#f4f1ea', paperTex: 0.3, mottle: 0.15, grain: 0.1, matte: 0.2, seed: 0,
+    paperColor: '#f4f1ea', blur: 0.6, paperTex: 0.3, mottle: 0.15, grain: 0.1, matte: 0.2, seed: 0,
     // スキャン
     scan: 'off', scanDpi: '300', scanBlur: 0.6,
   };
@@ -99,6 +99,7 @@
       { key: 'sharp', label: 'シャープネス（ソフト ↔ シャープ）', min: -1, max: 1, step: 0.01 },
     ] },
     { title: '紙と質感', items: [
+      { key: 'blur', label: 'ぼかし（網点をなじませる）', min: 0, max: 1, step: 0.01, show: (p) => p.method !== 'none' },
       { key: 'paperColor', label: '紙色', type: 'paper' },
       { key: 'paperTex', label: '紙の質感', min: 0, max: 1, step: 0.01 },
       { key: 'mottle', label: 'インキむら', min: 0, max: 1, step: 0.01 },
@@ -110,7 +111,7 @@
       { key: 'scan', type: 'choice', options: [['off', 'オフ'], ['on', 'オン']] },
       { key: 'scanDpi', label: '解像度（画像幅を A4 幅に合わせる）', type: 'choice',
         options: [['150', '150dpi'], ['300', '300dpi'], ['600', '600dpi']], show: (p) => p.scan === 'on' },
-      { key: 'scanBlur', label: 'ぼかし（ガウス半径）', min: 0.35, max: 2.5, step: 0.05, unit: ' px', show: (p) => p.scan === 'on' },
+      { key: 'scanBlur', label: 'スキャナのぼけ', min: 0.35, max: 2.5, step: 0.05, unit: ' px', show: (p) => p.scan === 'on' },
     ] },
   ];
 
@@ -309,12 +310,12 @@
     const btn = $('#btn-export');
     btn.disabled = true;
     try {
-      const k = parseFloat($('#export-scale').value);
-      const { blob } = await renderer.exportBlob(params, k);
+      const type = $('#export-format').value;
+      const { blob } = await renderer.exportBlob(params, { longSide: parseInt($('#export-scale').value, 10), type });
       draw();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `${fileName}_${presetId}.png`;
+      a.download = `${fileName}_${presetId}.${type === 'image/jpeg' ? 'jpg' : 'png'}`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     } catch (err) {

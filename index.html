@@ -18,10 +18,15 @@
     <button id="btn-compare" type="button" title="押している間、元画像を表示（スペースキーでも可）">元画像と比較</button>
     <span class="sep"></span>
     <select id="export-scale" aria-label="書き出しサイズ">
-      <option value="1">原寸</option>
-      <option value="2" selected>2倍（網点を精細に）</option>
+      <option value="2048" selected>長辺 2048px</option>
+      <option value="4096">長辺 4096px</option>
+      <option value="8192">長辺 8192px</option>
     </select>
-    <button id="btn-export" type="button" class="primary">PNG 書き出し</button>
+    <select id="export-format" aria-label="書き出し形式">
+      <option value="image/jpeg" selected>JPEG</option>
+      <option value="image/png">PNG</option>
+    </select>
+    <button id="btn-export" type="button" class="primary">書き出し</button>
     <span class="sep"></span>
     <a class="btn" href="manual.html" target="_blank" rel="noopener">マニュアル</a>
   </div>

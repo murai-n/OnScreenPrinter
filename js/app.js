@@ -413,7 +413,8 @@
     const b = el('button');
     b.type = 'button';
     b.dataset.id = p.id;
-    b.append(el('strong', null, p.label), el('span', null, p.note));
+    b.textContent = p.label;
+    b.title = p.note;
     b.addEventListener('click', () => applyPreset(p));
     presetsEl.append(b);
   }

@@ -551,7 +551,7 @@ void main() {
       gl.uniform1f(pr.loc('u_mottle'), P.mottle);
       gl.uniform1f(pr.loc('u_grain'), P.grain);
       gl.uniform1f(pr.loc('u_matte'), P.matte);
-      gl.uniform3f(pr.loc('u_bg'), 0.086, 0.086, 0.094);
+      gl.uniform3f(pr.loc('u_bg'), 0.941, 0.941, 0.941);
 
       gl.bindVertexArray(this.vao);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
